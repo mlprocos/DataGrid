@@ -18,119 +18,90 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using Xamarin.Forms;
 
-[assembly:System.Runtime.CompilerServices.InternalsVisibleTo("Zumero.DataGrid.iOS")]
-[assembly:System.Runtime.CompilerServices.InternalsVisibleTo("Zumero.DataGrid.Unified")]
-[assembly:System.Runtime.CompilerServices.InternalsVisibleTo("Zumero.DataGrid.Android")]
-[assembly:System.Runtime.CompilerServices.InternalsVisibleTo("Zumero.DataGrid.WinPhone")]
-[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Zumero.DataGrid.Windows")]
-[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Zumero.DataGrid.WinPhone81")]
+[assembly:InternalsVisibleTo("Zumero.DataGrid.iOS")]
+[assembly:InternalsVisibleTo("Zumero.DataGrid.Unified")]
+[assembly:InternalsVisibleTo("Zumero.DataGrid.Android")]
+[assembly:InternalsVisibleTo("Zumero.DataGrid.WinPhone")]
+[assembly: InternalsVisibleTo("Zumero.DataGrid.Windows")]
+[assembly: InternalsVisibleTo("Zumero.DataGrid.WinPhone81")]
 
 namespace Zumero
 {
 	public enum SelMode
 	{
 		None,
-		Row,
-	}
-
-	public class Column : BindableObject
-	{
-		public static readonly BindableProperty WidthProperty =
-			BindableProperty.Create<Column,double>(
-				p => p.Width, 80);
-
-		public double Width {
-			get { return (double)GetValue(WidthProperty); }
-			set { SetValue(WidthProperty, value); } // TODO disallow invalid values
-		}
-
-		public static readonly BindableProperty TemplateProperty =
-			BindableProperty.Create<Column,DataTemplate>(
-				p => p.Template, null);
-
-		public DataTemplate Template {
-			get { return (DataTemplate)GetValue(TemplateProperty); }
-			set { SetValue(TemplateProperty, value); }
-		}
-
-		public static readonly BindableProperty HeaderViewProperty =
-			BindableProperty.Create<Column,View>(
-				p => p.HeaderView, null);
-
-		public View HeaderView {
-			get { return (View)GetValue(HeaderViewProperty); }
-			set { SetValue(HeaderViewProperty, value); }
-		}
-
+		Row
 	}
 
 	public class DataGrid : ContentView
 	{
 		private struct CoordPair
 		{
-			private int _col;
-			private int _row;
-			public int col { get { return _col; } }
-			public int row { get { return _row; } }
-			public CoordPair(int c, int r)
+			public int col { get; private set; }
+            public int row { get; private set; }
+
+			public CoordPair(int c, int r) : this()
 			{
-				_col = c;
-				_row = r;
+				col = c;
+				row = r;
 			}
 		};
 
-		private readonly AbsoluteLayout container;
-		private readonly ContentView cornerViewContainer;
-		private readonly myLayout mainPanel;
-		private readonly myLayout frozenRowPanel;
-		private readonly myLayout frozenColumnPanel;
+        private readonly AbsoluteLayout container;
+        private readonly ContentView cornerViewContainer;
+		private readonly DataGridLayout _mainPanel;
+		private readonly DataGridLayout _frozenRowPanel;
+		private readonly DataGridLayout _frozenColumnPanel;
 
 		public DataGrid()
 		{
 			cornerViewContainer = new ContentView();
-			mainPanel = new myLayout(mainGetBox);
-			frozenRowPanel = new myLayout(this.frozenRowGetBox);
-			frozenColumnPanel = new myLayout(this.frozenColumnGetBox);
+			_mainPanel = new DataGridLayout(mainGetBox);
+			_frozenRowPanel = new DataGridLayout(frozenRowGetBox);
+			_frozenColumnPanel = new DataGridLayout(frozenColumnGetBox);
 			cellInventoryByColumn = new Dictionary<int, List<View>> ();
 			coordsToBoundView = new Dictionary<int, Dictionary<int, View>> ();
 			boundViewToCoords = new Dictionary<View, CoordPair> ();
 
-			container = new AbsoluteLayout ();
+            container = new AbsoluteLayout ();
+		    container.IsClippedToBounds = true;
             if (Device.OS != TargetPlatform.Windows &&
                 Device.OS != TargetPlatform.WinPhone)
             {
                 //Setting these flags was causing problems 
-                frozenRowPanel.IsClippedToBounds = true;
-                frozenColumnPanel.IsClippedToBounds = true;
-                mainPanel.IsClippedToBounds = true;
+                _frozenRowPanel.IsClippedToBounds = true;
+                _frozenColumnPanel.IsClippedToBounds = true;
+                _mainPanel.IsClippedToBounds = true;
             }
             else
             {
-                frozenRowPanel.CallOnChildMeasureInvalidated = true;
+                _frozenRowPanel.CallOnChildMeasureInvalidated = true;
             }
 
             // note that the ordering of the following statements is
             // significant, but only because IsClippedToBounds doesn't
             // seem to work properly in the WP8 version of Xamarin.Forms.
 
-			container.Children.Add(mainPanel); 
-			container.Children.Add(frozenColumnPanel);
-			container.Children.Add (frozenRowPanel);
+			container.Children.Add(_mainPanel); 
+			container.Children.Add(_frozenColumnPanel);
+			container.Children.Add (_frozenRowPanel);
 			container.Children.Add(cornerViewContainer);
 
-			this.PropertyChanged += handlePropertyChanged;
-			this.PropertyChanging += handlePropertyChanging;
+			PropertyChanged += handlePropertyChanged;
+			PropertyChanging += handlePropertyChanging;
 
-			this.Columns = new ObservableCollection<Column> ();
+			Columns = new ObservableCollection<Column> ();
 
 			Content = container;
 		}
 
-		private double frozenRowHeightPlusSpacing { get { return HeaderHeight + RowSpacing; } }
-		private double rowHeightPlusSpacing { get { return RowHeight + RowSpacing; } }
+		private double FrozenRowHeightPlusSpacing { get { return HeaderHeight + RowSpacing; } }
+		private double RowHeightPlusSpacing { get { return RowHeight + RowSpacing; } }
 		private double getColumnWidthPlusSpacing(int col)
 		{
 			var w = getColumnWidth (col);
@@ -148,22 +119,22 @@ namespace Zumero
 		{
 			if (col >= 0) {
 				// getFrozenRowView is not allowed to return null.
-				// frozenRowPanel.Children is required to have
+				// _frozenRowPanel.Children is required to have
 				// exactly as many items as columns, and they must
 				// be in the right order.
 
 #if true
-				frozenRowPanel.Children.Clear ();
+				_frozenRowPanel.Children.Clear ();
 				for (int c = 0; c < numberOfColumns; c++) {
 					View v = getFrozenRowView(c);
-					frozenRowPanel.Children.Add (v);
+					_frozenRowPanel.Children.Add (v);
 				}
-				frozenRowPanel.LayoutAllChildren ();
+				_frozenRowPanel.LayoutAllChildren ();
 #else
 				var v = getFrozenRowView (col);
 				// TODO the following line crashes on Android.  in EnsureChildOrder.
-				frozenRowPanel.Children [col] = v;
-				frozenRowPanel.LayoutOneChild (v);
+				_frozenRowPanel.Children [col] = v;
+				_frozenRowPanel.LayoutOneChild (v);
 #endif
 			} else {
 				// the frozen col headerview is the corner view
@@ -193,16 +164,16 @@ namespace Zumero
 				}
 			}
 
-			this.cachedColumnEdges = null;
-			this.cachedTotalWidth = 0;
+			cachedColumnEdges = null;
+			cachedTotalWidth = 0;
 
 			rebuildFrozenRow ();
 
 			updateVisibility ();
 
-			mainPanel.LayoutAllChildren();
-			frozenRowPanel.LayoutAllChildren();
-			frozenColumnPanel.LayoutAllChildren();
+			_mainPanel.LayoutAllChildren();
+			_frozenRowPanel.LayoutAllChildren();
+			_frozenColumnPanel.LayoutAllChildren();
 		}
 
 		private void columnsRemoved(int start, int count)
@@ -210,7 +181,7 @@ namespace Zumero
 			// can't be the frozen col.  start=-1 is disallowed here.
 			for (int i = 0; i < count; i++) {
 				discardCellInventoryForColumn (start + i, true);
-				frozenRowPanel.Children.RemoveAt (start + i);
+				_frozenRowPanel.Children.RemoveAt (start + i);
 			}
 
 			if (start == numberOfColumns) {
@@ -235,16 +206,16 @@ namespace Zumero
 				}
 			}
 
-			this.cachedColumnEdges = null;
-			this.cachedTotalWidth = 0;
+			cachedColumnEdges = null;
+			cachedTotalWidth = 0;
 			ensureColumnEdgesAreCached ();
 
 			if (ContentOffset_X > ScrollXMax) {
 				SetContentOffset (ScrollXMax, ContentOffset_Y);
 			} else {
 				updateVisibility ();
-				mainPanel.LayoutAllChildren ();
-				frozenRowPanel.LayoutAllChildren ();
+				_mainPanel.LayoutAllChildren ();
+				_frozenRowPanel.LayoutAllChildren ();
 			}
 		}
 
@@ -264,13 +235,13 @@ namespace Zumero
 				cornerViewContainer.Content = getFrozenRowView (-1);
 			}
 
-			this.cachedColumnEdges = null;
-			this.cachedTotalWidth = 0;
+			cachedColumnEdges = null;
+			cachedTotalWidth = 0;
 			rebuildFrozenRow ();
 			updateVisibility ();
-			mainPanel.LayoutAllChildren();
-			frozenRowPanel.LayoutAllChildren();
-			frozenColumnPanel.LayoutAllChildren();
+			_mainPanel.LayoutAllChildren();
+			_frozenRowPanel.LayoutAllChildren();
+			_frozenColumnPanel.LayoutAllChildren();
 		}
 
 		private void allColumnsReplaced()
@@ -279,17 +250,17 @@ namespace Zumero
 				discardCellInventoryForColumn (col, false);
 			}
 
-			frozenColumnPanel.Children.Clear ();
-			frozenRowPanel.Children.Clear ();
-			mainPanel.Children.Clear ();
+			_frozenColumnPanel.Children.Clear ();
+			_frozenRowPanel.Children.Clear ();
+			_mainPanel.Children.Clear ();
 
-			this.cachedColumnEdges = null;
-			this.cachedTotalWidth = 0;
+			cachedColumnEdges = null;
+			cachedTotalWidth = 0;
 			rebuildFrozenRow ();
 			updateVisibility ();
-			mainPanel.LayoutAllChildren();
-			frozenRowPanel.LayoutAllChildren();
-			frozenColumnPanel.LayoutAllChildren();
+			_mainPanel.LayoutAllChildren();
+			_frozenRowPanel.LayoutAllChildren();
+			_frozenColumnPanel.LayoutAllChildren();
 		}
 
 		private void allRowsReplaced()
@@ -299,8 +270,8 @@ namespace Zumero
 			} else {
 				if (Content != null) {
 					updateVisibility ();
-					mainPanel.LayoutAllChildren ();
-					frozenColumnPanel.LayoutAllChildren ();
+					_mainPanel.LayoutAllChildren ();
+					_frozenColumnPanel.LayoutAllChildren ();
 				}
 			}
 		}
@@ -318,7 +289,7 @@ namespace Zumero
 		private void fixSelection(View v, int col, int row)
 		{
 			if (SelMode.Row == SelectionMode) {
-				if ( (v is Xamarin.Forms.Label) || (v is Xamarin.Forms.Layout) ) {
+				if ( (v is Label) || (v is Layout) ) {
 					if (row == SelectedRowIndex) {
 						v.BackgroundColor = SelectedBackgroundColor;
 					} else {
@@ -383,8 +354,8 @@ namespace Zumero
 		{
 			rebindRowsFrom (start);
 			updateVisibility ();
-			mainPanel.LayoutAllChildren ();
-			frozenColumnPanel.LayoutAllChildren ();
+			_mainPanel.LayoutAllChildren ();
+			_frozenColumnPanel.LayoutAllChildren ();
 		}
 
 		private void rowsRemoved(int start, int count)
@@ -412,7 +383,7 @@ namespace Zumero
 						boundViewToCoords.Remove (v);
 					}
 					if (removeFromPanel) {
-						myLayout panel = (col < 0) ? frozenColumnPanel : mainPanel;
+						DataGridLayout panel = (col < 0) ? _frozenColumnPanel : _mainPanel;
 						panel.Children.Remove (v);
 					}
 				}
@@ -424,19 +395,19 @@ namespace Zumero
 		private void columnTemplateChanged(int col)
 		{
 			discardCellInventoryForColumn (col, true);
-			this.cachedColumnEdges = null;
-			this.cachedTotalWidth = 0;
+			cachedColumnEdges = null;
+			cachedTotalWidth = 0;
 			rebuildFrozenRow ();
 			updateVisibility ();
-			mainPanel.LayoutAllChildren();
-			frozenRowPanel.LayoutAllChildren();
-			frozenColumnPanel.LayoutAllChildren();
+			_mainPanel.LayoutAllChildren();
+			_frozenRowPanel.LayoutAllChildren();
+			_frozenColumnPanel.LayoutAllChildren();
 		}
 
 		private void columnWidthChanged(int col)
 		{
-			this.cachedColumnEdges = null;
-			this.cachedTotalWidth = 0;
+			cachedColumnEdges = null;
+			cachedTotalWidth = 0;
 			ensureColumnEdgesAreCached ();
 
 			if (col < 0) {
@@ -446,15 +417,15 @@ namespace Zumero
 				SetContentOffset (ScrollXMax, ContentOffset_Y);
 			} else {
 				updateVisibility ();
-				mainPanel.LayoutAllChildren ();
-				frozenRowPanel.LayoutAllChildren ();
-				frozenColumnPanel.LayoutAllChildren ();
+				_mainPanel.LayoutAllChildren ();
+				_frozenRowPanel.LayoutAllChildren ();
+				_frozenColumnPanel.LayoutAllChildren ();
 			}
 		}
 
 		private void layoutVisibleCellsInOneColumn(int col)
 		{
-			myLayout panel = (col < 0) ? frozenColumnPanel : mainPanel;
+			DataGridLayout panel = (col < 0) ? _frozenColumnPanel : _mainPanel;
 			Dictionary<int,View> rows;
 			if (coordsToBoundView.TryGetValue (col, out rows)) {
 				foreach (int row in rows.Keys) {
@@ -473,18 +444,18 @@ namespace Zumero
 
 		private void layoutFrozenRow()
 		{
-			foreach (View v in frozenRowPanel.Children) {
-				frozenRowPanel.LayoutOneChild (v);
+			foreach (View v in _frozenRowPanel.Children) {
+				_frozenRowPanel.LayoutOneChild (v);
 			}
 		}
 
 		private void rebuildFrozenRow()
 		{
 			// the frozen row does not do cell recycling
-			frozenRowPanel.Children.Clear ();
+			_frozenRowPanel.Children.Clear ();
 			for (int col = 0; col < numberOfColumns; col++) {
 				View v = getFrozenRowView(col);
-				frozenRowPanel.Children.Add (v);
+				_frozenRowPanel.Children.Add (v);
 			}
 		}
 
@@ -496,8 +467,8 @@ namespace Zumero
 
 		private void columnSpacingChanged()
 		{
-			this.cachedColumnEdges = null;
-			this.cachedTotalWidth = 0;
+			cachedColumnEdges = null;
+			cachedTotalWidth = 0;
 			ensureColumnEdgesAreCached ();
 
 			layoutPanels ();
@@ -506,9 +477,9 @@ namespace Zumero
 				SetContentOffset (ScrollXMax, ContentOffset_Y);
 			} else {
 				updateVisibility ();
-				mainPanel.LayoutAllChildren ();
-				frozenRowPanel.LayoutAllChildren ();
-				frozenColumnPanel.LayoutAllChildren ();
+				_mainPanel.LayoutAllChildren ();
+				_frozenRowPanel.LayoutAllChildren ();
+				_frozenColumnPanel.LayoutAllChildren ();
 			}
 		}
 
@@ -520,9 +491,9 @@ namespace Zumero
 
 			// anytime visibility changes, we probably need to layout all
 			// cells, not just the visible ones
-			mainPanel.LayoutAllChildren ();
-			frozenColumnPanel.LayoutAllChildren ();
-			frozenRowPanel.LayoutAllChildren ();
+			_mainPanel.LayoutAllChildren ();
+			_frozenColumnPanel.LayoutAllChildren ();
+			_frozenRowPanel.LayoutAllChildren ();
 		}
 
 		private void frozenRowHeightChanged()
@@ -534,9 +505,9 @@ namespace Zumero
 
 			// anytime visibility changes, we probably need to layout all
 			// cells, not just the visible ones
-			mainPanel.LayoutAllChildren ();
-			frozenColumnPanel.LayoutAllChildren ();
-			frozenRowPanel.LayoutAllChildren ();
+			_mainPanel.LayoutAllChildren ();
+			_frozenColumnPanel.LayoutAllChildren ();
+			_frozenRowPanel.LayoutAllChildren ();
 		}
 
 		private double[] cachedColumnEdges;
@@ -544,55 +515,7 @@ namespace Zumero
 
 		private double ContentOffset_X;
 		private double ContentOffset_Y;
-
-		private class myLayout : Layout<View>
-		{
-			Func<View,Rectangle> getBox;
-
-			public myLayout(Func<View,Rectangle> f)
-			{
-				getBox = f;
-			}
-
-			public void LayoutOneChild(View v)
-			{
-				Rectangle r = getBox (v);
-				v.Layout (r);
-			}
-
-			public void LayoutAllChildren()
-			{
-				foreach (View v in Children) {
-					LayoutOneChild (v);
-				}
-			}
-
-			protected override bool ShouldInvalidateOnChildAdded (View child)
-			{
-				return false;
-			}
-
-			protected override bool ShouldInvalidateOnChildRemoved (View child)
-			{
-				return false;
-			}
-
-            public bool CallOnChildMeasureInvalidated = false;
-			protected override void OnChildMeasureInvalidated ()
-			{
-                if (CallOnChildMeasureInvalidated)
-                    base.OnChildMeasureInvalidated();
-			}
-
-			protected override void LayoutChildren (double x, double y, double width, double height)
-			{
-				// TODO consider a flag here to suspend/resume.
-				// maybe implement this by requiring all children insertions to be done
-				// through a method?
-				LayoutAllChildren ();
-			}
-		}
-
+        
 		private readonly Dictionary<int,List<View>> cellInventoryByColumn;
 		private readonly Dictionary<View,CoordPair> boundViewToCoords;
 		private readonly Dictionary<int,Dictionary<int,View>> coordsToBoundView;
@@ -621,11 +544,10 @@ namespace Zumero
 				col = t.col;
 				row = t.row;
 				return true;
-			} else {
-				col = -1;
-				row = -1;
-				return false;
 			}
+		    col = -1;
+		    row = -1;
+		    return false;
 		}
 
 		private bool getBoundViewForCoords(int col, int row, out View v)
@@ -656,9 +578,9 @@ namespace Zumero
 			View v = createCellView (cvt);
 			vlist.Add (v);
 			if (col < 0) {
-				frozenColumnPanel.Children.Add (v);
+				_frozenColumnPanel.Children.Add (v);
 			} else {
-				mainPanel.Children.Add (v);
+				_mainPanel.Children.Add (v);
 			}
 			return v;
 		}
@@ -669,20 +591,20 @@ namespace Zumero
 			if (fcw < 0) {
 				fcw = 0;
 			}
-			var frh = frozenRowHeightPlusSpacing;
+			var frh = FrozenRowHeightPlusSpacing;
 			if (frh < 0) {
 				frh = 0;
 			}
 
-			AbsoluteLayout.SetLayoutFlags (frozenRowPanel, AbsoluteLayoutFlags.None);
-			AbsoluteLayout.SetLayoutBounds (frozenRowPanel, new Rectangle (
+			AbsoluteLayout.SetLayoutFlags (_frozenRowPanel, AbsoluteLayoutFlags.None);
+			AbsoluteLayout.SetLayoutBounds (_frozenRowPanel, new Rectangle (
 				fcw,
 				0,
 				Width - fcw,
 				frh
 			));
-			AbsoluteLayout.SetLayoutFlags (frozenColumnPanel, AbsoluteLayoutFlags.None);
-			AbsoluteLayout.SetLayoutBounds (frozenColumnPanel, new Rectangle (
+			AbsoluteLayout.SetLayoutFlags (_frozenColumnPanel, AbsoluteLayoutFlags.None);
+			AbsoluteLayout.SetLayoutBounds (_frozenColumnPanel, new Rectangle (
 				0,
 				frh,
 				fcw,
@@ -695,8 +617,8 @@ namespace Zumero
 				fcw,
 				frh
 			));
-			AbsoluteLayout.SetLayoutFlags (mainPanel, AbsoluteLayoutFlags.None);
-			AbsoluteLayout.SetLayoutBounds (mainPanel, new Rectangle (
+			AbsoluteLayout.SetLayoutFlags (_mainPanel, AbsoluteLayoutFlags.None);
+			AbsoluteLayout.SetLayoutBounds (_mainPanel, new Rectangle (
 				fcw,
 				frh,
 				Width - fcw,
@@ -715,9 +637,9 @@ namespace Zumero
 			// TODO should the following be necessary?  or are these calls implied by
 			// the call to layoutPanels above?
 
-			mainPanel.LayoutAllChildren();
-			frozenRowPanel.LayoutAllChildren();
-			frozenColumnPanel.LayoutAllChildren(); 
+			_mainPanel.LayoutAllChildren();
+			_frozenRowPanel.LayoutAllChildren();
+			_frozenColumnPanel.LayoutAllChildren(); 
 		}
 
 		private void ensureColumnEdgesAreCached()
@@ -741,13 +663,12 @@ namespace Zumero
 			if (getCoordsForBoundView(v, out col, out row)) {
 				ensureColumnEdgesAreCached ();
 				double x = cachedColumnEdges[col];
-				double y = row * rowHeightPlusSpacing;
+				double y = row * RowHeightPlusSpacing;
 				double width = getColumnWidth(col);
-				double height = RowHeight;
+			    double height = RowHeight;
 				return new Rectangle (x - ContentOffset_X, y - ContentOffset_Y, width, height);
-			} else {
-				return new Rectangle (-1000, -1000, 0, 0);
 			}
+		    return new Rectangle (-1000, -1000, 0, 0);
 		}
 
 		private Rectangle frozenColumnGetBox(View v)
@@ -757,18 +678,17 @@ namespace Zumero
 			if (getCoordsForBoundView(v, out col, out row)) {
 				// assert col == -1
 				double x = 0;
-				double y = row * rowHeightPlusSpacing;
+				double y = row * RowHeightPlusSpacing;
 				double width = getColumnWidth(-1);
 				double height = RowHeight;
 				return new Rectangle (x, y - ContentOffset_Y, width, height);
-			} else {
-				return new Rectangle (-1000, -1000, 0, 0);
 			}
+		    return new Rectangle (-1000, -1000, 0, 0);
 		}
 
 		private Rectangle frozenRowGetBox(View v)
 		{
-			int col = frozenRowPanel.Children.IndexOf(v);
+			int col = _frozenRowPanel.Children.IndexOf(v);
 			ensureColumnEdgesAreCached ();
 			double x = cachedColumnEdges [col];
 			double y = 0;
@@ -802,10 +722,10 @@ namespace Zumero
 				}
 			}
 		}
-        bool bAlreadyUpdatingVisibility = false;
+        bool bAlreadyUpdatingVisibility;
 		private void updateVisibility()
 		{
-            if (bAlreadyUpdatingVisibility == true)
+            if (bAlreadyUpdatingVisibility)
                 return;
 
             bAlreadyUpdatingVisibility = true;
@@ -816,14 +736,14 @@ namespace Zumero
 
 			calcVisibleColumns (
 				ContentOffset_X,
-				this.Width,
+				Width,
 				out col_first,
 				out col_last
 			);
 
 			calcVisibleRows (
 				ContentOffset_Y,
-				this.Height,
+				Height,
 				out row_first,
 				out row_last
 			);
@@ -899,9 +819,9 @@ namespace Zumero
 
 				updateVisibility ();
 
-				mainPanel.LayoutAllChildren ();
-				frozenRowPanel.LayoutAllChildren ();
-				frozenColumnPanel.LayoutAllChildren ();
+				_mainPanel.LayoutAllChildren ();
+				_frozenRowPanel.LayoutAllChildren ();
+				_frozenColumnPanel.LayoutAllChildren ();
 			}
 		}
 
@@ -913,7 +833,7 @@ namespace Zumero
 				if (fcw < 0) {
 					fcw = 0;
 				}
-				q -= (this.Width - fcw);
+				q -= (Width - fcw);
 				if (q < 0) {
 					q = 0;
 				}
@@ -924,12 +844,12 @@ namespace Zumero
 		private double ScrollYMax
 		{
 			get {
-				var q = rowHeightPlusSpacing * numberOfRows;
-				var frh = frozenRowHeightPlusSpacing;
+				var q = RowHeightPlusSpacing * numberOfRows;
+				var frh = FrozenRowHeightPlusSpacing;
 				if (frh < 0) {
 					frh = 0;
 				}
-				q -= (this.Height - frh);
+				q -= (Height - frh);
 				if (q < 0) {
 					q = 0;
 				}
@@ -968,14 +888,14 @@ namespace Zumero
 		private int findLastVisibleColumn(int first, double end)
 		{
 			int last = first;
-			for (int col = first+1; col < cachedColumnEdges.Length; col++) {
-				if (cachedColumnEdges [col] > end) {
+			for (int col = first+1; col < cachedColumnEdges.Length; col++)
+			{
+			    if (cachedColumnEdges [col] > end) {
 					break;
-				} else {
-					last = col;
 				}
+			    last = col;
 			}
-			return last;
+		    return last;
 		}
 
 		private void calcVisibleColumns(
@@ -1012,7 +932,7 @@ namespace Zumero
 				last = -1;
 			}
 
-			double w = rowHeightPlusSpacing;
+			double w = RowHeightPlusSpacing;
 			first = (int)(top / w);
 			last = (int)((top + height) / w);
 			int num = numberOfRows;
@@ -1063,18 +983,18 @@ namespace Zumero
 		private int previousSelectedRowIndex = -1;
 		void handlePropertyChanging (object sender, PropertyChangingEventArgs e)
 		{
-			if (e.PropertyName == DataGrid.RowsProperty.PropertyName) {
+			if (e.PropertyName == RowsProperty.PropertyName) {
 				if (Rows != null) {
 					if (Rows is ObservableCollection<object>) {
 						var ob = Rows as ObservableCollection<object>;
 						ob.CollectionChanged -= handleRowsCollectionChanged;
 					}
 				}
-			} else if (e.PropertyName == DataGrid.FrozenColumnProperty.PropertyName) {
+			} else if (e.PropertyName == FrozenColumnProperty.PropertyName) {
 				if (FrozenColumn != null) {
 					FrozenColumn.PropertyChanged -= handleFrozenColumnPropertyChanged;
 				}
-			} else if (e.PropertyName == DataGrid.ColumnsProperty.PropertyName) {
+			} else if (e.PropertyName == ColumnsProperty.PropertyName) {
 				if (Columns != null) {
 					if (Columns is ObservableCollection<Column>) {
 						var ob = Columns as ObservableCollection<Column>;
@@ -1084,33 +1004,33 @@ namespace Zumero
 						c.PropertyChanged -= handleColumnPropertyChanged;
 					}
 				}
-			} else if (e.PropertyName == DataGrid.SelectedRowIndexProperty.PropertyName) {
+			} else if (e.PropertyName == SelectedRowIndexProperty.PropertyName) {
 				previousSelectedRowIndex = SelectedRowIndex;
 			}
 		}
 
-		void handlePropertyChanged (object sender, System.ComponentModel.PropertyChangedEventArgs e)
+		void handlePropertyChanged (object sender, PropertyChangedEventArgs e)
 		{
-			if (e.PropertyName == DataGrid.RowHeightProperty.PropertyName) {
-				this.rowHeightChanged ();
-			} else if (e.PropertyName == DataGrid.RowSpacingProperty.PropertyName) {
-				this.rowSpacingChanged ();
-			} else if (e.PropertyName == DataGrid.ColumnSpacingProperty.PropertyName) {
-				this.columnSpacingChanged ();
-			} else if (e.PropertyName == DataGrid.HeaderHeightProperty.PropertyName) {
+			if (e.PropertyName == RowHeightProperty.PropertyName) {
+				rowHeightChanged ();
+			} else if (e.PropertyName == RowSpacingProperty.PropertyName) {
+				rowSpacingChanged ();
+			} else if (e.PropertyName == ColumnSpacingProperty.PropertyName) {
+				columnSpacingChanged ();
+			} else if (e.PropertyName == HeaderHeightProperty.PropertyName) {
 				frozenRowHeightChanged ();
-			} else if (e.PropertyName == DataGrid.RowsProperty.PropertyName) {
+			} else if (e.PropertyName == RowsProperty.PropertyName) {
 				addListenersToRowsCollection ();
 				allRowsReplaced ();
-			} else if (e.PropertyName == DataGrid.FrozenColumnProperty.PropertyName) {
+			} else if (e.PropertyName == FrozenColumnProperty.PropertyName) {
 				// the frozen column was replaced completely
 				addListenersToFrozenColumn ();
 				columnsReplaced (-1, 1);
-			} else if (e.PropertyName == DataGrid.ColumnsProperty.PropertyName) {
+			} else if (e.PropertyName == ColumnsProperty.PropertyName) {
 				// the entire columns collection got replaced
 				addListenersToColumnsCollection ();
 				allColumnsReplaced ();
-			} else if (e.PropertyName == DataGrid.SelectedRowIndexProperty.PropertyName) {
+			} else if (e.PropertyName == SelectedRowIndexProperty.PropertyName) {
 				if (previousSelectedRowIndex >= 0) {
 					fixSelection (previousSelectedRowIndex);
 				}
@@ -1119,48 +1039,48 @@ namespace Zumero
 			}
 		}
 
-		void handleColumnPropertyChanged (object sender, System.ComponentModel.PropertyChangedEventArgs e)
+		void handleColumnPropertyChanged (object sender, PropertyChangedEventArgs e)
 		{
-			int col = this.Columns.IndexOf ((Column) sender);
+			int col = Columns.IndexOf ((Column) sender);
 			if (e.PropertyName == Column.HeaderViewProperty.PropertyName) {
 				columnHeaderViewChanged (col);
 			} else if (e.PropertyName == Column.TemplateProperty.PropertyName) {
 				columnTemplateChanged (col);
 			} else if (e.PropertyName == Column.WidthProperty.PropertyName) {
-				this.columnWidthChanged (col);
+				columnWidthChanged (col);
 			}
 		}
 
-		void handleFrozenColumnPropertyChanged (object sender, System.ComponentModel.PropertyChangedEventArgs e)
+		void handleFrozenColumnPropertyChanged (object sender, PropertyChangedEventArgs e)
 		{
 			if (e.PropertyName == Column.HeaderViewProperty.PropertyName) {
-				this.columnHeaderViewChanged (-1);
+				columnHeaderViewChanged (-1);
 			} else if (e.PropertyName == Column.TemplateProperty.PropertyName) {
 				columnTemplateChanged (-1);
 			} else if (e.PropertyName == Column.WidthProperty.PropertyName) {
-				this.columnWidthChanged (-1);
+				columnWidthChanged (-1);
 			}
 		}
 
-		void handleColumnsCollectionChanged (object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+		void handleColumnsCollectionChanged (object sender, NotifyCollectionChangedEventArgs e)
 		{
 			switch (e.Action) {
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Add:
+			case NotifyCollectionChangedAction.Add:
 				columnsAdded (e.NewStartingIndex, e.NewItems.Count);
 				foreach (Column c in e.NewItems) {
 					c.PropertyChanged += handleColumnPropertyChanged;
 				}
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Move:
+			case NotifyCollectionChangedAction.Move:
 				// TODO
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Remove:
+			case NotifyCollectionChangedAction.Remove:
 				columnsRemoved (e.OldStartingIndex, e.OldItems.Count);
 				foreach (Column c in e.OldItems) {
 					c.PropertyChanged -= handleColumnPropertyChanged;
 				}
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Replace:
+			case NotifyCollectionChangedAction.Replace:
 				if (e.OldStartingIndex >= 0) {
 					columnsReplaced (e.OldStartingIndex, e.OldItems.Count);
 				} else {
@@ -1176,7 +1096,7 @@ namespace Zumero
 					c.PropertyChanged += handleColumnPropertyChanged;
 				}
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Reset:
+			case NotifyCollectionChangedAction.Reset:
 				allColumnsReplaced ();
 				#if not
 				// TODO how to remove handleColumnPropertyChanged from old?
@@ -1193,22 +1113,22 @@ namespace Zumero
 			}
 		}
 
-		void handleRowsCollectionChanged (object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+		void handleRowsCollectionChanged (object sender, NotifyCollectionChangedEventArgs e)
 		{
 			switch (e.Action) {
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Add:
+			case NotifyCollectionChangedAction.Add:
 				rowsAdded (e.NewStartingIndex, e.NewItems.Count);
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Move:
+			case NotifyCollectionChangedAction.Move:
 				// TODO
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Remove:
+			case NotifyCollectionChangedAction.Remove:
 				rowsRemoved (e.OldStartingIndex, e.OldItems.Count);
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Replace:
+			case NotifyCollectionChangedAction.Replace:
 				rowsReplaced (e.OldStartingIndex, e.OldItems.Count);
 				break;
-			case System.Collections.Specialized.NotifyCollectionChangedAction.Reset:
+			case NotifyCollectionChangedAction.Reset:
 				allRowsReplaced ();
 				break;
 			}
@@ -1324,27 +1244,24 @@ namespace Zumero
         // as an attempted workaround because IsClippedToBounds doesn't
         // seem to work properly in the WP8 version of Xamarin.Forms.
 
-		View _defaultCornerView = null;
+		View _defaultCornerView;
 		private View cornerView {
-			get {
-				if (FrozenColumn != null) {
+			get
+			{
+			    if (FrozenColumn != null) {
 					if (FrozenColumn.HeaderView != null)
 						return FrozenColumn.HeaderView;
-					else
-					{
-						if (_defaultCornerView == null)
-						{
-							_defaultCornerView = new BoxView
-							{
-								Color = this.BackgroundColor,
-								BackgroundColor = this.BackgroundColor
-							};
-						}
-						return _defaultCornerView;
-					}
-				} else {
-					return null;
-				}
+			        if (_defaultCornerView == null)
+			        {
+			            _defaultCornerView = new BoxView
+			            {
+			                Color = BackgroundColor,
+			                BackgroundColor = BackgroundColor
+			            };
+			        }
+			        return _defaultCornerView;
+			    }
+			    return null;
 			}
 		}
 
@@ -1359,31 +1276,29 @@ namespace Zumero
 
 		private View getFrozenRowView (int col)
 		{
-			if (col >= 0) {
+		    if (col >= 0) {
 				var v = Columns [col].HeaderView;
 				if (v == null) {
 					// this function is not allowed to return null.
 					v = new BoxView (); // TODO a friendlier default?
 				}
 				return v;
-			} else {
-				return cornerView;
 			}
+		    return cornerView;
 		}
 
-		private double getColumnWidth (int col)
-		{
-			if (col < 0) {
+	    private double getColumnWidth (int col)
+	    {
+	        if (col < 0) {
 				if (null == FrozenColumn) {
 					return 0;
 				}
 				return FrozenColumn.Width;
-			} else {
-				return Columns [col].Width;
 			}
-		}
+	        return Columns [col].Width;
+	    }
 
-		private int numberOfRows {
+        private int numberOfRows {
 			get {
 				return Rows == null ? 0 : Rows.Count;
 			}
@@ -1391,18 +1306,17 @@ namespace Zumero
 
 		private DataTemplate getTemplateForColumn (int col)
 		{
-			if (col < 0) {
-				if (FrozenColumn != null) {
+		    if (col < 0)
+		    {
+		        if (FrozenColumn != null) {
 					return FrozenColumn.Template;
-				} else { 
-					return null;
 				}
-			} else {
-				return Columns [col].Template;
-			}
+		        return null;
+		    }
+		    return Columns [col].Template;
 		}
 
-		private object getDataForCell (int col, int row)
+	    private object getDataForCell (int col, int row)
 		{
 			// TODO isn't it weird that col isn't used here anymore?
 			return Rows [row];
@@ -1410,30 +1324,29 @@ namespace Zumero
 
 		internal bool SingleTap(double x, double y)
 		{
-			// TODO pretend that there is a setting which binds the "select row" command
+		    // TODO pretend that there is a setting which binds the "select row" command
 			// to the "single tap " action.
 
 			if (SelMode.Row == SelectionMode) {
-				var x2 = x - mainPanel.X + ContentOffset_X;
+				var x2 = x - _mainPanel.X + ContentOffset_X;
 				if ((x2 < 0) || (x2 > cachedTotalWidth)) {
 					return false;
 				}
-				var y2 = y - mainPanel.Y + ContentOffset_Y;
-				int row = (int)(y2 / rowHeightPlusSpacing);
+				var y2 = y - _mainPanel.Y + ContentOffset_Y;
+				int row = (int)(y2 / RowHeightPlusSpacing);
 				if ((row < 0) || (row >= numberOfRows)) {
 					return false;
 				}
 				// when we get a tap on the row that is already selected, we unselect it.
 				// TODO this could be a matter of policy
 				if (row == SelectedRowIndex) {
-					this.SelectedRowIndex = -1;
+					SelectedRowIndex = -1;
 				} else {
-					this.SelectedRowIndex = row;
+					SelectedRowIndex = row;
 				}
 				return true;
-			} else {
-				return false;
 			}
+		    return false;
 		}
 	}
 }

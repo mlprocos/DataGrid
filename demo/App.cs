@@ -512,7 +512,8 @@ namespace demo
 			dg.Rows = testData.createLotsOfWordPairsWithButtons (dg);
 
 			pages ["Test 4"] = new ContentPage {
-				Content = dg
+				Content = dg,
+                Padding = 20
 			};
 			dg = null;
 
